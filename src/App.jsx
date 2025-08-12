@@ -1,0 +1,372 @@
+import { useState, useMemo } from 'react';
+import { Ruler, Box, Gauge, Cable, Percent, Zap, CheckCircle, AlertCircle } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+
+// Hard-coded data for conduit and wire properties
+// Source for these values would typically come from NEC tables.
+const conduitData = [
+  { size: "1/2\"", area: 0.304 },
+  { size: "3/4\"", area: 0.533 },
+  { size: "1\"", area: 0.864 },
+  { size: "1 1/4\"", area: 1.503 },
+  { size: "1 1/2\"", area: 2.031 },
+  { size: "2\"", area: 3.356 },
+  { size: "2 1/2\"", area: 4.786 },
+  { size: "3\"", area: 7.388 },
+  { size: "3 1/2\"", area: 9.89 },
+  { size: "4\"", area: 12.63 }
+];
+
+// Data for common wire sizes and insulation types in sq. inches
+// You can add more insulation types and gauges here.
+const wireData = [
+  // THHN
+  { gauge: "14 AWG", area: 0.0134, insulation: "THHN" },
+  { gauge: "12 AWG", area: 0.0177, insulation: "THHN" },
+  { gauge: "10 AWG", area: 0.0222, insulation: "THHN" },
+  { gauge: "8 AWG", area: 0.0381, insulation: "THHN" },
+  { gauge: "6 AWG", area: 0.0507, insulation: "THHN" },
+  { gauge: "4 AWG", area: 0.0726, insulation: "THHN" },
+  { gauge: "3 AWG", area: 0.0863, insulation: "THHN" },
+  { gauge: "2 AWG", area: 0.1039, insulation: "THHN" },
+  { gauge: "1 AWG", area: 0.1416, insulation: "THHN" },
+  { gauge: "1/0 AWG", area: 0.1706, insulation: "THHN" },
+  { gauge: "2/0 AWG", area: 0.2081, insulation: "THHN" },
+  { gauge: "3/0 AWG", area: 0.2541, insulation: "THHN" },
+  { gauge: "4/0 AWG", area: 0.3164, insulation: "THHN" },
+  // THW
+  { gauge: "14 AWG", area: 0.0195, insulation: "THW" },
+  { gauge: "12 AWG", area: 0.0236, insulation: "THW" },
+  { gauge: "10 AWG", area: 0.0305, insulation: "THW" },
+  { gauge: "8 AWG", area: 0.0463, insulation: "THW" },
+  { gauge: "6 AWG", area: 0.0633, insulation: "THW" },
+  { gauge: "4 AWG", area: 0.0911, insulation: "THW" },
+  { gauge: "3 AWG", area: 0.1087, insulation: "THW" },
+  { gauge: "2 AWG", area: 0.1309, insulation: "THW" },
+  { gauge: "1 AWG", area: 0.1787, insulation: "THW" },
+  { gauge: "1/0 AWG", area: 0.2152, insulation: "THW" },
+  { gauge: "2/0 AWG", area: 0.2625, insulation: "THW" },
+  { gauge: "3/0 AWG", area: 0.3204, insulation: "THW" },
+  { gauge: "4/0 AWG", area: 0.3995, insulation: "THW" },
+  // XHHW
+  { gauge: "14 AWG", area: 0.0181, insulation: "XHHW" },
+  { gauge: "12 AWG", area: 0.0211, insulation: "XHHW" },
+  { gauge: "10 AWG", area: 0.0270, insulation: "XHHW" },
+  { gauge: "8 AWG", area: 0.0401, insulation: "XHHW" },
+  { gauge: "6 AWG", area: 0.0538, insulation: "XHHW" },
+  { gauge: "4 AWG", area: 0.0766, insulation: "XHHW" },
+  { gauge: "3 AWG", area: 0.0914, insulation: "XHHW" },
+  { gauge: "2 AWG", area: 0.1098, insulation: "XHHW" },
+  { gauge: "1 AWG", area: 0.1498, insulation: "XHHW" },
+  { gauge: "1/0 AWG", area: 0.1805, insulation: "XHHW" },
+  { gauge: "2/0 AWG", area: 0.2201, insulation: "XHHW" },
+  { gauge: "3/0 AWG", area: 0.2691, insulation: "XHHW" },
+  { gauge: "4/0 AWG", area: 0.3346, insulation: "XHHW" }
+];
+
+// Map conduit types to their full descriptive name
+const conduitTypes = {
+    'emt': 'Electrical Metallic Tubing (EMT)',
+    'rmc': 'Rigid Metal Conduit (RMC)',
+    'pvc': 'PVC Conduit'
+}
+
+// Function to determine the max fill percentage based on NEC rules
+const getMaxFillPercentage = (wireCount) => {
+    // Return 0 if wire count is invalid
+    if (wireCount <= 0 || isNaN(wireCount)) return 0;
+    
+    // NEC rules for conduit fill:
+    // 1 wire: 53%
+    // 2 wires: 31%
+    // 3 or more wires: 40%
+    if (wireCount === 1) return 0.53;
+    if (wireCount === 2) return 0.31;
+    return 0.40;
+};
+
+// Main App component
+const App = () => {
+  // Get unique wire gauges and insulation types from the data
+  const uniqueGauges = useMemo(() => [...new Set(wireData.map(w => w.gauge))], []);
+  const uniqueInsulations = useMemo(() => [...new Set(wireData.map(w => w.insulation))], []);
+
+  // State for user inputs
+  const [selectedConduitSize, setSelectedConduitSize] = useState(conduitData[0].size);
+  const [selectedConduitType, setSelectedConduitType] = useState('emt');
+  const [wireCount, setWireCount] = useState(3);
+  const [selectedWireGauge, setSelectedWireGauge] = useState(uniqueGauges[0]);
+  const [selectedInsulation, setSelectedInsulation] = useState(uniqueInsulations[0]);
+  const [selectedGroundWireGauge, setSelectedGroundWireGauge] = useState(uniqueGauges[0]);
+  const [selectedGroundWireInsulation, setSelectedGroundWireInsulation] = useState(uniqueInsulations[0]);
+
+
+  // Memoized calculation to prevent unnecessary re-renders
+  const {
+    conduitArea,
+    wireArea,
+    groundWireArea,
+    totalWireArea,
+    maxFillPercentage,
+    maxFillArea,
+    currentFillPercentage,
+    isCompliant,
+    message
+  } = useMemo(() => {
+    // Find the selected conduit and wire data
+    const conduit = conduitData.find(c => c.size === selectedConduitSize);
+    const wire = wireData.find(w => w.gauge === selectedWireGauge && w.insulation === selectedInsulation);
+    const groundWire = wireData.find(w => w.gauge === selectedGroundWireGauge && w.insulation === selectedGroundWireInsulation);
+
+
+    // Get the areas and max fill percentage
+    const conduitArea = conduit?.area || 0;
+    const wireArea = wire?.area || 0;
+    const groundWireArea = groundWire?.area || 0;
+
+    const totalWireArea = (wireArea * wireCount) + groundWireArea;
+    
+    // Total wire count includes the ground wire
+    const totalWireCount = parseInt(wireCount) + 1;
+    const maxFillPercentage = getMaxFillPercentage(totalWireCount);
+    const maxFillArea = conduitArea * maxFillPercentage;
+
+    // Calculate current fill percentage
+    const currentFillPercentage = conduitArea > 0 ? (totalWireArea / conduitArea) * 100 : 0;
+
+    // Check for compliance
+    const isCompliant = totalWireArea <= maxFillArea;
+
+    // Create a message for the user
+    let message = '';
+    const parsedWireCount = parseInt(wireCount);
+
+    if (isNaN(parsedWireCount) || parsedWireCount < 0) {
+        message = 'Please enter a valid number of wires.';
+    } else if (currentFillPercentage > (maxFillPercentage * 100)) {
+        message = 'This configuration exceeds the maximum allowable fill percentage!';
+    } else {
+        message = 'This configuration is compliant with NEC guidelines.';
+    }
+
+    return {
+      conduitArea: conduitArea,
+      wireArea: wireArea,
+      groundWireArea: groundWireArea,
+      totalWireArea: totalWireArea,
+      maxFillPercentage: maxFillPercentage,
+      maxFillArea: maxFillArea,
+      currentFillPercentage: currentFillPercentage,
+      isCompliant: isCompliant,
+      message: message
+    };
+  }, [selectedConduitSize, wireCount, selectedWireGauge, selectedInsulation, selectedGroundWireGauge, selectedGroundWireInsulation]);
+
+  // Handle number input changes
+  const handleWireCountChange = (e) => {
+    const value = e.target.value;
+    // Allow empty string for the user to delete the number
+    if (value === '' || (!isNaN(value) && value >= 0)) {
+      setWireCount(value);
+    }
+  };
+
+  // Base input style
+  const inputStyle = "w-full p-3 border-2 border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200 shadow-sm";
+
+  // Result card style with dynamic colors
+  const resultCardStyle = isCompliant
+    ? "bg-emerald-50 text-emerald-800 border-emerald-300"
+    : "bg-rose-50 text-rose-800 border-rose-300";
+
+  return (
+    <div className="min-h-screen bg-slate-100 p-4 font-sans antialiased text-slate-800">
+      <div className="max-w-4xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+          className="bg-white rounded-2xl shadow-xl p-8"
+        >
+          <div className="flex items-center space-x-4 mb-8">
+            <Cable className="text-blue-600 w-12 h-12"/>
+            <h1 className="text-4xl font-bold text-slate-900">Conduit Fill Calculator</h1>
+          </div>
+          <p className="text-slate-600 mb-8">
+            Calculate the fill percentage of a conduit based on the number and size of the cables.
+            This tool uses standard NEC fill percentages (53% for one wire, 31% for two, 40% for three or more).
+          </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            {/* Conduit Size Input */}
+            <div>
+              <label htmlFor="conduit-size" className="block text-sm font-medium text-slate-700 mb-2">
+                <Ruler className="inline-block mr-2 w-4 h-4 text-blue-500" />
+                Conduit Trade Size
+              </label>
+              <select
+                id="conduit-size"
+                value={selectedConduitSize}
+                onChange={(e) => setSelectedConduitSize(e.target.value)}
+                className={inputStyle}
+              >
+                {conduitData.map((c, index) => (
+                  <option key={index} value={c.size}>{c.size}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Conduit Type Input */}
+            <div>
+                <label htmlFor="conduit-type" className="block text-sm font-medium text-slate-700 mb-2">
+                    <Box className="inline-block mr-2 w-4 h-4 text-blue-500" />
+                    Conduit Type
+                </label>
+                <select
+                    id="conduit-type"
+                    value={selectedConduitType}
+                    onChange={(e) => setSelectedConduitType(e.target.value)}
+                    className={inputStyle}
+                >
+                    {Object.entries(conduitTypes).map(([key, value]) => (
+                        <option key={key} value={key}>{value}</option>
+                    ))}
+                </select>
+            </div>
+            
+            {/* Number of Wires and Wire Type */}
+            <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div>
+                  <label htmlFor="wire-count" className="block text-sm font-medium text-slate-700 mb-2">
+                    <Cable className="inline-block mr-2 w-4 h-4 text-blue-500" />
+                    Number of Wires (Hot/Neutral)
+                  </label>
+                  <input
+                    id="wire-count"
+                    type="number"
+                    value={wireCount}
+                    onChange={handleWireCountChange}
+                    min="0"
+                    className={inputStyle}
+                    placeholder="e.g., 3"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="insulation-type" className="block text-sm font-medium text-slate-700 mb-2">
+                    <Gauge className="inline-block mr-2 w-4 h-4 text-blue-500" />
+                    Wire Insulation Type
+                  </label>
+                  <select
+                    id="insulation-type"
+                    value={selectedInsulation}
+                    onChange={(e) => setSelectedInsulation(e.target.value)}
+                    className={inputStyle}
+                  >
+                    {uniqueInsulations.map((insulation, index) => (
+                      <option key={index} value={insulation}>{insulation}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="wire-gauge" className="block text-sm font-medium text-slate-700 mb-2">
+                    <Gauge className="inline-block mr-2 w-4 h-4 text-blue-500" />
+                    Wire Gauge
+                  </label>
+                  <select
+                    id="wire-gauge"
+                    value={selectedWireGauge}
+                    onChange={(e) => setSelectedWireGauge(e.target.value)}
+                    className={inputStyle}
+                  >
+                    {uniqueGauges.map((gauge, index) => (
+                      <option key={index} value={gauge}>{gauge}</option>
+                    ))}
+                  </select>
+                </div>
+            </div>
+
+            {/* Ground Wire Type */}
+            <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label htmlFor="ground-insulation-type" className="block text-sm font-medium text-slate-700 mb-2">
+                    <Zap className="inline-block mr-2 w-4 h-4 text-blue-500" />
+                    Ground Wire Insulation Type
+                  </label>
+                  <select
+                    id="ground-insulation-type"
+                    value={selectedGroundWireInsulation}
+                    onChange={(e) => setSelectedGroundWireInsulation(e.target.value)}
+                    className={inputStyle}
+                  >
+                    {uniqueInsulations.map((insulation, index) => (
+                      <option key={index} value={insulation}>{insulation}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="ground-wire-gauge" className="block text-sm font-medium text-slate-700 mb-2">
+                    <Zap className="inline-block mr-2 w-4 h-4 text-blue-500" />
+                    Ground Wire Gauge
+                  </label>
+                  <select
+                    id="ground-wire-gauge"
+                    value={selectedGroundWireGauge}
+                    onChange={(e) => setSelectedGroundWireGauge(e.target.value)}
+                    className={inputStyle}
+                  >
+                    {uniqueGauges.map((gauge, index) => (
+                      <option key={index} value={gauge}>{gauge}</option>
+                    ))}
+                  </select>
+                </div>
+            </div>
+          </div>
+
+          {/* Results Section */}
+          <AnimatePresence>
+              {wireCount >= 0 && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  transition={{ duration: 0.3 }}
+                  className={`border-l-4 rounded-r-lg p-6 mb-6 transition-colors duration-300 ${resultCardStyle}`}
+                >
+                  <div className="flex items-center space-x-3 mb-4">
+                    {isCompliant
+                        ? <CheckCircle className="h-6 w-6 text-emerald-600"/>
+                        : <AlertCircle className="h-6 w-6 text-rose-600"/>
+                    }
+                    <h2 className="text-xl font-bold">{message}</h2>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-sm font-medium">
+                    <div className="flex flex-col">
+                      <span className="text-slate-500">Conduit Area:</span>
+                      <span className="text-lg">{conduitArea.toFixed(3)} in²</span>
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-slate-500">Max Fill Area:</span>
+                      <span className="text-lg">{(maxFillArea).toFixed(3)} in²</span>
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-slate-500">Total Wires Area:</span>
+                      <span className="text-lg">{(totalWireArea).toFixed(3)} in²</span>
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-slate-500">Fill Percentage:</span>
+                      <span className="text-lg flex items-center">
+                        <Percent className="w-4 h-4 mr-1"/>
+                        {currentFillPercentage.toFixed(2)}%
+                      </span>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+          </AnimatePresence>
+        </motion.div>
+      </div>
+    </div>
+  );
+};
+
+export default App;
