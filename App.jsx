@@ -1,21 +1,47 @@
-import { useState, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Ruler, Box, Gauge, Cable, Percent, Zap, CheckCircle, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 // Hard-coded data for conduit and wire properties
 // Source for these values would typically come from NEC tables.
-const conduitData = [
-  { size: "1/2\"", area: 0.304 },
-  { size: "3/4\"", area: 0.533 },
-  { size: "1\"", area: 0.864 },
-  { size: "1 1/4\"", area: 1.503 },
-  { size: "1 1/2\"", area: 2.031 },
-  { size: "2\"", area: 3.356 },
-  { size: "2 1/2\"", area: 4.786 },
-  { size: "3\"", area: 7.388 },
-  { size: "3 1/2\"", area: 9.89 },
-  { size: "4\"", area: 12.63 }
-];
+const conduitData = {
+  emt: [ // Electrical Metallic Tubing
+    { size: "1/2\"", area: 0.304 },
+    { size: "3/4\"", area: 0.533 },
+    { size: "1\"", area: 0.864 },
+    { size: "1 1/4\"", area: 1.503 },
+    { size: "1 1/2\"", area: 2.031 },
+    { size: "2\"", area: 3.356 },
+    { size: "2 1/2\"", area: 4.786 },
+    { size: "3\"", area: 7.388 },
+    { size: "3 1/2\"", area: 9.89 },
+    { size: "4\"", area: 12.63 }
+  ],
+  rmc: [ // Rigid Metal Conduit
+    { size: "1/2\"", area: 0.350 },
+    { size: "3/4\"", area: 0.590 },
+    { size: "1\"", area: 0.950 },
+    { size: "1 1/4\"", area: 1.650 },
+    { size: "1 1/2\"", area: 2.220 },
+    { size: "2\"", area: 3.660 },
+    { size: "2 1/2\"", area: 5.210 },
+    { size: "3\"", area: 8.050 },
+    { size: "3 1/2\"", area: 10.780 },
+    { size: "4\"", area: 13.750 }
+  ],
+  hdpe: [ // High-Density Polyethylene Conduit (example values, may vary)
+    { size: "1/2\"", area: 0.250 },
+    { size: "3/4\"", area: 0.450 },
+    { size: "1\"", area: 0.750 },
+    { size: "1 1/4\"", area: 1.300 },
+    { size: "1 1/2\"", area: 1.800 },
+    { size: "2\"", area: 3.000 },
+    { size: "2 1/2\"", area: 4.500 },
+    { size: "3\"", area: 7.000 },
+    { size: "3 1/2\"", area: 9.500 },
+    { size: "4\"", area: 12.000 }
+  ]
+};
 
 // Data for common wire sizes and insulation types in sq. inches
 // You can add more insulation types and gauges here.
@@ -66,23 +92,24 @@ const wireData = [
 
 // Map conduit types to their full descriptive name
 const conduitTypes = {
-    'emt': 'Electrical Metallic Tubing (EMT)',
-    'rmc': 'Rigid Metal Conduit (RMC)',
-    'pvc': 'PVC Conduit'
-}
+  'emt': 'Electrical Metallic Tubing (EMT)',
+  'rmc': 'Rigid Metal Conduit (RMC)',
+  'hdpe': 'HDPE Conduit', // Added HDPE
+  'pvc': 'PVC Conduit'
+};
 
 // Function to determine the max fill percentage based on NEC rules
 const getMaxFillPercentage = (wireCount) => {
-    // Return 0 if wire count is invalid
-    if (wireCount <= 0 || isNaN(wireCount)) return 0;
-    
-    // NEC rules for conduit fill:
-    // 1 wire: 53%
-    // 2 wires: 31%
-    // 3 or more wires: 40%
-    if (wireCount === 1) return 0.53;
-    if (wireCount === 2) return 0.31;
-    return 0.40;
+  // Return 0 if wire count is invalid
+  if (wireCount <= 0 || isNaN(wireCount)) return 0;
+
+  // NEC rules for conduit fill:
+  // 1 wire: 53%
+  // 2 wires: 31%
+  // 3 or more wires: 40%
+  if (wireCount === 1) return 0.53;
+  if (wireCount === 2) return 0.31;
+  return 0.40;
 };
 
 // Main App component
@@ -92,14 +119,22 @@ const App = () => {
   const uniqueInsulations = useMemo(() => [...new Set(wireData.map(w => w.insulation))], []);
 
   // State for user inputs
-  const [selectedConduitSize, setSelectedConduitSize] = useState(conduitData[0].size);
   const [selectedConduitType, setSelectedConduitType] = useState('emt');
+  const [selectedConduitSize, setSelectedConduitSize] = useState(conduitData.emt[0].size); // Initial state based on EMT
   const [wireCount, setWireCount] = useState(3);
   const [selectedWireGauge, setSelectedWireGauge] = useState(uniqueGauges[0]);
   const [selectedInsulation, setSelectedInsulation] = useState(uniqueInsulations[0]);
   const [selectedGroundWireGauge, setSelectedGroundWireGauge] = useState(uniqueGauges[0]);
   const [selectedGroundWireInsulation, setSelectedGroundWireInsulation] = useState(uniqueInsulations[0]);
 
+  // Update selectedConduitSize when selectedConduitType changes
+  React.useEffect(() => {
+    // Ensure the selected size exists for the new conduit type, otherwise default to the first size
+    const currentTypeConduitData = conduitData[selectedConduitType];
+    if (currentTypeConduitData && !currentTypeConduitData.some(c => c.size === selectedConduitSize)) {
+      setSelectedConduitSize(currentTypeConduitData[0].size);
+    }
+  }, [selectedConduitType, selectedConduitSize]);
 
   // Memoized calculation to prevent unnecessary re-renders
   const {
@@ -113,11 +148,12 @@ const App = () => {
     isCompliant,
     message
   } = useMemo(() => {
-    // Find the selected conduit and wire data
-    const conduit = conduitData.find(c => c.size === selectedConduitSize);
+    // Find the selected conduit data based on type and size
+    const currentConduitTypeData = conduitData[selectedConduitType] || [];
+    const conduit = currentConduitTypeData.find(c => c.size === selectedConduitSize);
+
     const wire = wireData.find(w => w.gauge === selectedWireGauge && w.insulation === selectedInsulation);
     const groundWire = wireData.find(w => w.gauge === selectedGroundWireGauge && w.insulation === selectedGroundWireInsulation);
-
 
     // Get the areas and max fill percentage
     const conduitArea = conduit?.area || 0;
@@ -125,7 +161,7 @@ const App = () => {
     const groundWireArea = groundWire?.area || 0;
 
     const totalWireArea = (wireArea * wireCount) + groundWireArea;
-    
+
     // Total wire count includes the ground wire
     const totalWireCount = parseInt(wireCount) + 1;
     const maxFillPercentage = getMaxFillPercentage(totalWireCount);
@@ -142,11 +178,11 @@ const App = () => {
     const parsedWireCount = parseInt(wireCount);
 
     if (isNaN(parsedWireCount) || parsedWireCount < 0) {
-        message = 'Please enter a valid number of wires.';
+      message = 'Please enter a valid number of wires.';
     } else if (currentFillPercentage > (maxFillPercentage * 100)) {
-        message = 'This configuration exceeds the maximum allowable fill percentage!';
+      message = 'This configuration exceeds the maximum allowable fill percentage!';
     } else {
-        message = 'This configuration is compliant with NEC guidelines.';
+      message = 'This configuration is compliant with NEC guidelines.';
     }
 
     return {
@@ -160,7 +196,7 @@ const App = () => {
       isCompliant: isCompliant,
       message: message
     };
-  }, [selectedConduitSize, wireCount, selectedWireGauge, selectedInsulation, selectedGroundWireGauge, selectedGroundWireInsulation]);
+  }, [selectedConduitType, selectedConduitSize, wireCount, selectedWireGauge, selectedInsulation, selectedGroundWireGauge, selectedGroundWireInsulation]);
 
   // Handle number input changes
   const handleWireCountChange = (e) => {
@@ -198,6 +234,24 @@ const App = () => {
           </p>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            {/* Conduit Type Input */}
+            <div>
+              <label htmlFor="conduit-type" className="block text-sm font-medium text-slate-700 mb-2">
+                <Box className="inline-block mr-2 w-4 h-4 text-blue-500" />
+                Conduit Type
+              </label>
+              <select
+                id="conduit-type"
+                value={selectedConduitType}
+                onChange={(e) => setSelectedConduitType(e.target.value)}
+                className={inputStyle}
+              >
+                {Object.entries(conduitTypes).map(([key, value]) => (
+                  <option key={key} value={key}>{value}</option>
+                ))}
+              </select>
+            </div>
+
             {/* Conduit Size Input */}
             <div>
               <label htmlFor="conduit-size" className="block text-sm font-medium text-slate-700 mb-2">
@@ -210,158 +264,141 @@ const App = () => {
                 onChange={(e) => setSelectedConduitSize(e.target.value)}
                 className={inputStyle}
               >
-                {conduitData.map((c, index) => (
+                {/* Dynamically render options based on selectedConduitType */}
+                {conduitData[selectedConduitType] && conduitData[selectedConduitType].map((c, index) => (
                   <option key={index} value={c.size}>{c.size}</option>
                 ))}
               </select>
             </div>
 
-            {/* Conduit Type Input */}
-            <div>
-                <label htmlFor="conduit-type" className="block text-sm font-medium text-slate-700 mb-2">
-                    <Box className="inline-block mr-2 w-4 h-4 text-blue-500" />
-                    Conduit Type
-                </label>
-                <select
-                    id="conduit-type"
-                    value={selectedConduitType}
-                    onChange={(e) => setSelectedConduitType(e.target.value)}
-                    className={inputStyle}
-                >
-                    {Object.entries(conduitTypes).map(([key, value]) => (
-                        <option key={key} value={key}>{value}</option>
-                    ))}
-                </select>
-            </div>
-            
             {/* Number of Wires and Wire Type */}
             <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div>
-                  <label htmlFor="wire-count" className="block text-sm font-medium text-slate-700 mb-2">
-                    <Cable className="inline-block mr-2 w-4 h-4 text-blue-500" />
-                    Number of Wires (Hot/Neutral)
-                  </label>
-                  <input
-                    id="wire-count"
-                    type="number"
-                    value={wireCount}
-                    onChange={handleWireCountChange}
-                    min="0"
-                    className={inputStyle}
-                    placeholder="e.g., 3"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="insulation-type" className="block text-sm font-medium text-slate-700 mb-2">
-                    <Gauge className="inline-block mr-2 w-4 h-4 text-blue-500" />
-                    Wire Insulation Type
-                  </label>
-                  <select
-                    id="insulation-type"
-                    value={selectedInsulation}
-                    onChange={(e) => setSelectedInsulation(e.target.value)}
-                    className={inputStyle}
-                  >
-                    {uniqueInsulations.map((insulation, index) => (
-                      <option key={index} value={insulation}>{insulation}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label htmlFor="wire-gauge" className="block text-sm font-medium text-slate-700 mb-2">
-                    <Gauge className="inline-block mr-2 w-4 h-4 text-blue-500" />
-                    Wire Gauge
-                  </label>
-                  <select
-                    id="wire-gauge"
-                    value={selectedWireGauge}
-                    onChange={(e) => setSelectedWireGauge(e.target.value)}
-                    className={inputStyle}
-                  >
-                    {uniqueGauges.map((gauge, index) => (
-                      <option key={index} value={gauge}>{gauge}</option>
-                    ))}
-                  </select>
-                </div>
+              <div>
+                <label htmlFor="wire-count" className="block text-sm font-medium text-slate-700 mb-2">
+                  <Cable className="inline-block mr-2 w-4 h-4 text-blue-500" />
+                  Number of Wires (Hot/Neutral)
+                </label>
+                <input
+                  id="wire-count"
+                  type="number"
+                  value={wireCount}
+                  onChange={handleWireCountChange}
+                  min="0"
+                  className={inputStyle}
+                  placeholder="e.g., 3"
+                />
+              </div>
+              <div>
+                <label htmlFor="insulation-type" className="block text-sm font-medium text-slate-700 mb-2">
+                  <Gauge className="inline-block mr-2 w-4 h-4 text-blue-500" />
+                  Wire Insulation Type
+                </label>
+                <select
+                  id="insulation-type"
+                  value={selectedInsulation}
+                  onChange={(e) => setSelectedInsulation(e.target.value)}
+                  className={inputStyle}
+                >
+                  {uniqueInsulations.map((insulation, index) => (
+                    <option key={index} value={insulation}>{insulation}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label htmlFor="wire-gauge" className="block text-sm font-medium text-slate-700 mb-2">
+                  <Gauge className="inline-block mr-2 w-4 h-4 text-blue-500" />
+                  Wire Gauge
+                </label>
+                <select
+                  id="wire-gauge"
+                  value={selectedWireGauge}
+                  onChange={(e) => setSelectedWireGauge(e.target.value)}
+                  className={inputStyle}
+                >
+                  {uniqueGauges.map((gauge, index) => (
+                    <option key={index} value={gauge}>{gauge}</option>
+                  ))}
+                </select>
+              </div>
             </div>
 
             {/* Ground Wire Type */}
             <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <label htmlFor="ground-insulation-type" className="block text-sm font-medium text-slate-700 mb-2">
-                    <Zap className="inline-block mr-2 w-4 h-4 text-blue-500" />
-                    Ground Wire Insulation Type
-                  </label>
-                  <select
-                    id="ground-insulation-type"
-                    value={selectedGroundWireInsulation}
-                    onChange={(e) => setSelectedGroundWireInsulation(e.target.value)}
-                    className={inputStyle}
-                  >
-                    {uniqueInsulations.map((insulation, index) => (
-                      <option key={index} value={insulation}>{insulation}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label htmlFor="ground-wire-gauge" className="block text-sm font-medium text-slate-700 mb-2">
-                    <Zap className="inline-block mr-2 w-4 h-4 text-blue-500" />
-                    Ground Wire Gauge
-                  </label>
-                  <select
-                    id="ground-wire-gauge"
-                    value={selectedGroundWireGauge}
-                    onChange={(e) => setSelectedGroundWireGauge(e.target.value)}
-                    className={inputStyle}
-                  >
-                    {uniqueGauges.map((gauge, index) => (
-                      <option key={index} value={gauge}>{gauge}</option>
-                    ))}
-                  </select>
-                </div>
+              <div>
+                <label htmlFor="ground-insulation-type" className="block text-sm font-medium text-slate-700 mb-2">
+                  <Zap className="inline-block mr-2 w-4 h-4 text-blue-500" />
+                  Ground Wire Insulation Type
+                </label>
+                <select
+                  id="ground-insulation-type"
+                  value={selectedGroundWireInsulation}
+                  onChange={(e) => setSelectedGroundWireInsulation(e.target.value)}
+                  className={inputStyle}
+                >
+                  {uniqueInsulations.map((insulation, index) => (
+                    <option key={index} value={insulation}>{insulation}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label htmlFor="ground-wire-gauge" className="block text-sm font-medium text-slate-700 mb-2">
+                  <Zap className="inline-block mr-2 w-4 h-4 text-blue-500" />
+                  Ground Wire Gauge
+                </label>
+                <select
+                  id="ground-wire-gauge"
+                  value={selectedGroundWireGauge}
+                  onChange={(e) => setSelectedGroundWireGauge(e.target.value)}
+                  className={inputStyle}
+                >
+                  {uniqueGauges.map((gauge, index) => (
+                    <option key={index} value={gauge}>{gauge}</option>
+                  ))}
+                </select>
+              </div>
             </div>
           </div>
 
           {/* Results Section */}
           <AnimatePresence>
-              {wireCount >= 0 && (
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -20 }}
-                  transition={{ duration: 0.3 }}
-                  className={`border-l-4 rounded-r-lg p-6 mb-6 transition-colors duration-300 ${resultCardStyle}`}
-                >
-                  <div className="flex items-center space-x-3 mb-4">
-                    {isCompliant
-                        ? <CheckCircle className="h-6 w-6 text-emerald-600"/>
-                        : <AlertCircle className="h-6 w-6 text-rose-600"/>
-                    }
-                    <h2 className="text-xl font-bold">{message}</h2>
+            {wireCount >= 0 && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                transition={{ duration: 0.3 }}
+                className={`border-l-4 rounded-r-lg p-6 mb-6 transition-colors duration-300 ${resultCardStyle}`}
+              >
+                <div className="flex items-center space-x-3 mb-4">
+                  {isCompliant
+                    ? <CheckCircle className="h-6 w-6 text-emerald-600"/>
+                    : <AlertCircle className="h-6 w-6 text-rose-600"/>
+                  }
+                  <h2 className="text-xl font-bold">{message}</h2>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-sm font-medium">
+                  <div className="flex flex-col">
+                    <span className="text-slate-500">Conduit Area:</span>
+                    <span className="text-lg">{conduitArea.toFixed(3)} in²</span>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-sm font-medium">
-                    <div className="flex flex-col">
-                      <span className="text-slate-500">Conduit Area:</span>
-                      <span className="text-lg">{conduitArea.toFixed(3)} in²</span>
-                    </div>
-                    <div className="flex flex-col">
-                      <span className="text-slate-500">Max Fill Area:</span>
-                      <span className="text-lg">{(maxFillArea).toFixed(3)} in²</span>
-                    </div>
-                    <div className="flex flex-col">
-                      <span className="text-slate-500">Total Wires Area:</span>
-                      <span className="text-lg">{(totalWireArea).toFixed(3)} in²</span>
-                    </div>
-                    <div className="flex flex-col">
-                      <span className="text-slate-500">Fill Percentage:</span>
-                      <span className="text-lg flex items-center">
-                        <Percent className="w-4 h-4 mr-1"/>
-                        {currentFillPercentage.toFixed(2)}%
-                      </span>
-                    </div>
+                  <div className="flex flex-col">
+                    <span className="text-slate-500">Max Fill Area:</span>
+                    <span className="text-lg">{(maxFillArea).toFixed(3)} in²</span>
                   </div>
-                </motion.div>
-              )}
+                  <div className="flex flex-col">
+                    <span className="text-slate-500">Total Wires Area:</span>
+                    <span className="text-lg">{(totalWireArea).toFixed(3)} in²</span>
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-slate-500">Fill Percentage:</span>
+                    <span className="text-lg flex items-center">
+                      <Percent className="w-4 h-4 mr-1"/>
+                      {currentFillPercentage.toFixed(2)}%
+                    </span>
+                  </div>
+                </div>
+              </motion.div>
+            )}
           </AnimatePresence>
         </motion.div>
       </div>
